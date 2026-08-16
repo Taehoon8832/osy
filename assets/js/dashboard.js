@@ -2,7 +2,7 @@
   "use strict";
 
   const POLL_MS = 3 * 60 * 1000;
-  const CACHE_KEY = "osy-news-cache-v4";
+  const CACHE_KEY = "osy-news-cache-v5";
   const LATEST_PAGE = 40;
 
   const state = {
@@ -12,9 +12,12 @@
     bound: false,
     month: "all",
     view: "latest",
+    q: "",
+    tagFilter: null,
     issues: [],
     filteredArticles: [],
     latestShown: 0,
+    previewStack: [],
   };
 
   const el = {
@@ -26,6 +29,15 @@
     main: document.getElementById("main"),
     periodLabel: document.getElementById("periodLabel"),
     viewHint: document.getElementById("viewHint"),
+    heroBand: document.getElementById("heroBand"),
+    statGrid: document.getElementById("statGrid"),
+    monthPulse: document.getElementById("monthPulse"),
+    hotKeywords: document.getElementById("hotKeywords"),
+    miniRank: document.getElementById("miniRank"),
+    mobileRails: document.getElementById("mobileRails"),
+    searchForm: document.getElementById("searchForm"),
+    q: document.getElementById("q"),
+    searchClear: document.getElementById("searchClear"),
     dateBtn: document.getElementById("dateBtn"),
     dateSheet: document.getElementById("dateSheet"),
     dateList: document.getElementById("dateList"),
@@ -36,6 +48,7 @@
     detailTitle: document.getElementById("detailTitle"),
     detailClose: document.getElementById("detailClose"),
     detailDim: document.getElementById("detailDim"),
+    readerBack: document.getElementById("readerBack"),
     toTop: document.getElementById("toTop"),
     sourceLink: document.getElementById("sourceLink"),
     syncBtn: document.getElementById("syncBtn"),
@@ -44,9 +57,9 @@
   };
 
   const HINTS = {
-    latest: "날짜순 최신 이슈 · 상세·연계 기사 확인",
-    popular: "연관 보도·이슈 밀도 기준 인기 순위 (조회수 대체 지표)",
-    report: "제목 · 세부 내용 · 연계 보도를 한 화면에서 확인",
+    latest: "카드를 누르면 페이지 안에서 바로 미리보기",
+    popular: "연관 보도·이슈 밀도 기준 인기 순위",
+    report: "제목·세부·연계를 펼쳐 보고, 미리보기로 이어 읽기",
   };
 
   const setProgress = (n, msg) => {
@@ -70,6 +83,14 @@
       el.toast.classList.remove("is-on");
       el.toast.hidden = true;
     }, 3000);
+  }
+
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
   }
 
   function readCache() {
@@ -97,9 +118,8 @@
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const total = Number(res.headers.get("content-length")) || 0;
     if (!res.body) {
-      const text = await res.text();
       onProgress?.(1);
-      return text;
+      return res.text();
     }
     const reader = res.body.getReader();
     const chunks = [];
@@ -147,7 +167,6 @@
   function escapeAttr(s) {
     return escapeHtml(s).replace(/'/g, "&#39;");
   }
-
   function formatShortDate(iso) {
     const [, m, d] = iso.split("-");
     return `${m}.${d}`;
@@ -162,18 +181,25 @@
       minute: "2-digit",
     });
   }
-
   function daysSince(iso) {
     const t = new Date(iso + "T12:00:00").getTime();
     return Math.max(0, (Date.now() - t) / 86400000);
   }
 
-  function filterByMonth(articles) {
-    if (state.month === "all") return articles.slice();
-    return articles.filter((a) => a.date.startsWith(state.month));
+  function applyFilters(articles) {
+    let rows = articles;
+    if (state.month !== "all") rows = rows.filter((a) => a.date.startsWith(state.month));
+    if (state.tagFilter) rows = rows.filter((a) => (a.tags || []).includes(state.tagFilter));
+    const q = state.q.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((a) => {
+        const hay = `${a.title} ${a.summary} ${a.press} ${(a.tags || []).join(" ")}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }
+    return rows.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   }
 
-  /** Build issue clusters by primary tag; score ≈ popularity proxy */
   function buildIssues(articles) {
     const byTag = new Map();
     for (const a of articles) {
@@ -183,7 +209,6 @@
         byTag.get(tag).push(a);
       }
     }
-
     const issues = [];
     for (const [tag, list] of byTag) {
       const unique = [];
@@ -194,19 +219,15 @@
         unique.push(a);
       }
       unique.sort((a, b) => (a.date < b.date ? 1 : -1));
-      if (unique.length < 1) continue;
-
+      if (!unique.length) continue;
       const pressSet = new Set(unique.map((a) => a.press));
       const recent = unique.filter((a) => daysSince(a.date) <= 21).length;
-      // 관심도 점수: 보도량 + 매체 다양성 + 최신성 (조회수 대체)
       const score = Math.round(
         unique.length * 12 + pressSet.size * 8 + recent * 6 + Math.max(0, 40 - daysSince(unique[0].date))
       );
-
       issues.push({
         id: tag,
         tag,
-        title: tag.replace(/^#/, "") + " 이슈",
         articles: unique,
         lead: unique[0],
         count: unique.length,
@@ -215,7 +236,6 @@
         updated: unique[0].date,
       });
     }
-
     issues.sort((a, b) => b.score - a.score || (a.updated < b.updated ? 1 : -1));
     return issues;
   }
@@ -223,11 +243,12 @@
   function relatedArticles(article, limit = 8) {
     if (!article) return [];
     const tags = new Set(article.tags || []);
+    const pool = state.filteredArticles.length ? state.filteredArticles : state.data.articles;
     if (!tags.size) {
-      return state.filteredArticles.filter((a) => a.id !== article.id && a.week === article.week).slice(0, limit);
+      return pool.filter((a) => a.id !== article.id && a.week === article.week).slice(0, limit);
     }
     const scored = [];
-    for (const a of state.filteredArticles) {
+    for (const a of pool) {
       if (a.id === article.id) continue;
       let overlap = 0;
       for (const t of a.tags || []) if (tags.has(t)) overlap += 1;
@@ -239,20 +260,124 @@
     return scored.slice(0, limit).map((x) => x.a);
   }
 
+  function formatProse(text) {
+    if (!text) return "";
+    const cleaned = String(text).replace(/\s+/g, " ").trim();
+    if (!cleaned) return "";
+    const parts = cleaned
+      .split(/(?<=[.。!?…])\s+|(?<=다\.)\s+|(?<=요\.)\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const chunks = parts.length > 1 ? parts : [cleaned];
+    return chunks.map((p) => `<p>${escapeHtml(p)}</p>`).join("");
+  }
+
+  function findArticle(id) {
+    return (
+      state.filteredArticles.find((x) => x.id === id) ||
+      state.data?.articles.find((x) => x.id === id) ||
+      null
+    );
+  }
+
   function openSheet(sheet, open) {
     sheet.hidden = !open;
-    document.body.style.overflow = open ? "hidden" : "";
+    if (!open && sheet === el.detailSheet) state.previewStack = [];
+    const anyOpen = !el.dateSheet.hidden || !el.detailSheet.hidden;
+    document.body.style.overflow = anyOpen ? "hidden" : "";
     if (sheet === el.dateSheet) el.dateBtn.setAttribute("aria-expanded", String(open));
+    if (el.readerBack) el.readerBack.hidden = state.previewStack.length < 2;
+  }
+
+  function renderHero() {
+    const lead = state.filteredArticles[0] || state.issues[0]?.lead;
+    if (!lead) {
+      el.heroBand.innerHTML = `<p class="hero-band__eye">ADMISSIONS BRIEF</p>
+        <h1>조건에 맞는 이슈가 없습니다</h1>
+        <p>기간·검색어를 조정해 보세요.</p>`;
+      return;
+    }
+    el.heroBand.innerHTML = `
+      <p class="hero-band__eye">TODAY’S BRIEF</p>
+      <h1>${escapeHtml(lead.title)}</h1>
+      <p>${escapeHtml(lead.summary || `${lead.press} · ${formatShortDate(lead.date)}`)}</p>
+      <div class="hero-band__actions">
+        <button type="button" class="btn-sm btn-sm--primary" data-detail="${escapeAttr(lead.id)}" style="background:#fff;color:#075c3a;box-shadow:none">미리보기</button>
+      </div>`;
+  }
+
+  function renderRails() {
+    const m = state.data.meta;
+    const count = state.filteredArticles.length;
+    el.statGrid.innerHTML = `
+      <div class="stat"><b>${count.toLocaleString("ko-KR")}</b><span>표시 기사</span></div>
+      <div class="stat"><b>${state.issues.length}</b><span>이슈 클러스터</span></div>
+      <div class="stat"><b>${m.weekCount}</b><span>주간</span></div>
+      <div class="stat"><b>${m.pressCount}</b><span>매체</span></div>`;
+
+    const months = state.data.months.slice(0, 8);
+    const maxM = Math.max(...months.map((x) => x.count), 1);
+    el.monthPulse.innerHTML = months
+      .map((mo) => {
+        const key = `${mo.year}-${String(mo.month).padStart(2, "0")}`;
+        const pct = Math.round((mo.count / maxM) * 100);
+        return `<button type="button" class="pulse__row" data-month="${key}" style="width:100%;background:none;border:0;padding:0;cursor:pointer">
+          <span>${String(mo.month).padStart(2, "0")}월</span>
+          <span class="pulse__track"><span class="pulse__fill" style="width:${pct}%;display:block;height:100%"></span></span>
+          <span>${mo.count}</span>
+        </button>`;
+      })
+      .join("");
+
+    const tags = (state.data.tags || []).slice(0, 14);
+    el.hotKeywords.innerHTML = tags
+      .map(
+        (t) =>
+          `<button type="button" class="${state.tagFilter === t.name ? "is-on" : ""}" data-tag="${escapeAttr(t.name)}">${escapeHtml(t.name)} · ${t.count}</button>`
+      )
+      .join("");
+
+    el.miniRank.innerHTML = state.issues
+      .slice(0, 8)
+      .map(
+        (iss, i) => `<button type="button" data-issue="${escapeAttr(iss.id)}">
+          <span class="n">${i + 1}</span>
+          <span><span class="t">${escapeHtml(iss.tag)} ${escapeHtml(iss.lead.title)}</span>
+          <span class="s">관심도 ${iss.score} · ${iss.count}건</span></span>
+        </button>`
+      )
+      .join("");
+
+    // Mobile condensed rails
+    el.mobileRails.innerHTML = `
+      <section class="glass glass--accent">
+        <h2 class="glass__title">핫 키워드</h2>
+        <div class="kw">${tags
+          .slice(0, 10)
+          .map(
+            (t) =>
+              `<button type="button" class="${state.tagFilter === t.name ? "is-on" : ""}" data-tag="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>`
+          )
+          .join("")}</div>
+      </section>
+      <section class="glass">
+        <h2 class="glass__title">브리핑 요약</h2>
+        <div class="stat-grid">
+          <div class="stat"><b>${count.toLocaleString("ko-KR")}</b><span>표시 기사</span></div>
+          <div class="stat"><b>${state.issues.slice(0, 1)[0]?.score || 0}</b><span>최고 관심도</span></div>
+        </div>
+      </section>`;
   }
 
   function renderPeriod() {
     const m = state.data.meta;
-    if (state.month === "all") {
-      el.periodLabel.textContent = `${(m.dateStart || "").replace(/-/g, ".")} – ${(m.dateEnd || "").replace(/-/g, ".")}`;
-    } else {
-      const [y, mo] = state.month.split("-");
-      el.periodLabel.textContent = `${y}.${mo} · ${state.filteredArticles.length}건`;
-    }
+    let label =
+      state.month === "all"
+        ? `${(m.dateStart || "").replace(/-/g, ".")} – ${(m.dateEnd || "").replace(/-/g, ".")}`
+        : `${state.month.replace("-", ".")} · ${state.filteredArticles.length}건`;
+    if (state.q) label += ` · “${state.q}”`;
+    if (state.tagFilter) label += ` · ${state.tagFilter}`;
+    el.periodLabel.textContent = label;
     el.viewHint.textContent = HINTS[state.view];
   }
 
@@ -271,7 +396,7 @@
 
   function itemHtml(a) {
     const tag = a.tags?.[0] || "";
-    return `<article class="item" data-id="${escapeAttr(a.id)}">
+    return `<article class="item" data-detail="${escapeAttr(a.id)}" tabindex="0" role="button" aria-label="미리보기: ${escapeAttr(a.title)}">
       <div class="item__top">
         <time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
         <span>${escapeHtml(a.press)}</span>
@@ -279,10 +404,7 @@
       </div>
       <h3 class="item__title">${escapeHtml(a.title)}</h3>
       ${a.summary ? `<p class="item__sum">${escapeHtml(a.summary)}</p>` : ""}
-      <div class="item__actions">
-        <button type="button" class="btn-sm btn-sm--primary" data-detail="${escapeAttr(a.id)}">상세·연계</button>
-        <a class="btn-sm" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer">원문</a>
-      </div>
+      <p class="item__hint">탭하여 미리보기</p>
     </article>`;
   }
 
@@ -291,7 +413,7 @@
     if (!append) {
       state.latestShown = 0;
       if (!list.length) {
-        el.main.innerHTML = `<p class="empty">해당 기간 이슈가 없습니다.</p>`;
+        el.main.innerHTML = `<p class="empty">검색·기간 조건에 맞는 이슈가 없습니다.</p>`;
         return;
       }
       el.main.innerHTML = `<div class="feed" id="feed"></div><div id="sentinel" aria-hidden="true"></div>`;
@@ -345,15 +467,15 @@
         const relHtml = rel.length
           ? rel
               .map(
-                (r) => `<a class="rel" href="${escapeAttr(r.url)}" target="_blank" rel="noopener noreferrer">
-                  ${escapeHtml(r.title)}
+                (r) => `<button type="button" class="rel reader__rel" data-preview="${escapeAttr(r.id)}">
+                  <strong>${escapeHtml(r.title)}</strong>
                   <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}</span>
-                </a>`
+                </button>`
               )
               .join("")
           : `<p class="rel"><span>연계 보도 없음</span></p>`;
-        return `<article class="report-card${idx < 2 ? " is-open" : ""}" data-id="${escapeAttr(a.id)}">
-          <button type="button" class="report-card__head" data-toggle="${escapeAttr(a.id)}">
+        return `<article class="report-card${idx < 2 ? " is-open" : ""}">
+          <button type="button" class="report-card__head" data-toggle="1">
             <div>
               <h3>${escapeHtml(a.title)}</h3>
               <div class="meta">${formatShortDate(a.date)} · ${escapeHtml(a.press)} · 연계 ${rel.length}</div>
@@ -362,103 +484,102 @@
           </button>
           <div class="report-card__body">
             <div class="report-card__detail">
-              <p>${escapeHtml(a.summary || "세부 요약이 없습니다. 원문에서 확인해 주세요.")}</p>
+              <div class="reader__prose" style="padding:0;max-width:none">${formatProse(a.summary || "세부 요약이 없습니다.")}</div>
               <div class="tags">${tags}</div>
               <div class="item__actions" style="margin-top:10px">
-                <button type="button" class="btn-sm btn-sm--primary" data-detail="${escapeAttr(a.id)}">전체 상세</button>
-                <a class="btn-sm" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer">원문</a>
+                <button type="button" class="btn-sm btn-sm--primary" data-detail="${escapeAttr(a.id)}">미리보기</button>
               </div>
             </div>
-            <div class="report-card__links">
-              <h4>연계 내용</h4>
-              ${relHtml}
-            </div>
+            <div class="report-card__links"><h4>연계 내용</h4>${relHtml}</div>
           </div>
         </article>`;
       })
       .join("")}</div>`;
   }
 
-  function showDetail(articleId) {
-    const a = state.filteredArticles.find((x) => x.id === articleId) || state.data.articles.find((x) => x.id === articleId);
-    if (!a) return;
+  function renderReader(a) {
     const rel = relatedArticles(a, 10);
     const tags = (a.tags || []).map((t) => `<span>${escapeHtml(t)}</span>`).join("");
-    el.detailTitle.textContent = "이슈 상세";
+    const prose = formatProse(a.summary);
+    el.detailTitle.textContent = "미리보기";
     el.detailBody.innerHTML = `
-      <div class="detail-hero">
-        <div class="press">${escapeHtml(a.press)} · ${formatShortDate(a.date)}</div>
-        <h3>${escapeHtml(a.title)}</h3>
-        <div class="sum">${escapeHtml(a.summary || "세부 요약이 없습니다.")}</div>
-        <div class="tags">${tags}</div>
-        <div class="item__actions">
-          <a class="btn-sm btn-sm--primary" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer">원문 보기</a>
+      <div class="reader__hero">
+        <div class="reader__meta">
+          <span class="press">${escapeHtml(a.press)}</span>
+          <time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
+          ${a.week ? `<span>${escapeHtml(a.week)}</span>` : ""}
         </div>
+        <h3 class="reader__title">${escapeHtml(a.title)}</h3>
       </div>
-      <div class="detail-section">
-        <h4>연계 내용 (${rel.length})</h4>
+      ${prose ? `<div class="reader__prose">${prose}</div>` : `<p class="reader__empty">요약 문장이 없습니다. 필요하면 원문 사이트에서 확인하세요.</p>`}
+      <div class="reader__tags tags">${tags}</div>
+      <div class="reader__actions">
+        <button type="button" class="btn-sm" id="toggleEmbed">사이트 미리보기</button>
+        <a class="btn-sm btn-sm--primary" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer">원문 사이트</a>
+      </div>
+      <div class="reader__embed" id="readerEmbed" hidden>
+        <iframe title="원문 미리보기" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" src="${escapeAttr(a.url)}"></iframe>
+        <p class="reader__embed-note">일부 언론사는 보안 정책으로 미리보기가 가려질 수 있습니다. 그럴 땐 위의 요약과 연계 이슈로 확인하세요.</p>
+      </div>
+      <section class="reader__section">
+        <h3>연계 이슈 · 탭하면 바로 미리보기</h3>
         ${
           rel.length
             ? rel
                 .map(
-                  (r) => `<a class="rel" href="${escapeAttr(r.url)}" target="_blank" rel="noopener noreferrer">
-                    ${escapeHtml(r.title)}
-                    <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}${(r.tags || [])
-                      .slice(0, 2)
-                      .map((t) => " · " + t)
-                      .join("")}</span>
-                  </a>`
+                  (r) => `<button type="button" class="reader__rel" data-preview="${escapeAttr(r.id)}">
+                    <strong>${escapeHtml(r.title)}</strong>
+                    <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}</span>
+                  </button>`
                 )
                 .join("")
-            : "<p class='empty' style='padding:16px'>연계 보도를 찾지 못했습니다.</p>"
+            : `<p class="reader__empty" style="padding:0">연계 보도를 찾지 못했습니다.</p>`
         }
-      </div>`;
+      </section>`;
+    el.readerBack.hidden = state.previewStack.length < 2;
+    const toggle = document.getElementById("toggleEmbed");
+    const embed = document.getElementById("readerEmbed");
+    toggle?.addEventListener("click", () => {
+      const show = embed.hidden;
+      embed.hidden = !show;
+      toggle.textContent = show ? "미리보기 닫기" : "사이트 미리보기";
+      if (show) embed.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+
+  function showDetail(articleId, { push = true } = {}) {
+    const a = findArticle(articleId);
+    if (!a) return;
+    if (push) {
+      const last = state.previewStack[state.previewStack.length - 1];
+      if (last !== articleId) state.previewStack.push(articleId);
+    }
+    renderReader(a);
     openSheet(el.detailSheet, true);
+    el.detailBody.scrollTop = 0;
   }
 
   function showIssue(tag) {
     const iss = state.issues.find((x) => x.id === tag);
     if (!iss) return;
-    el.detailTitle.textContent = iss.tag;
-    const lead = iss.lead;
-    const rest = iss.articles.slice(0, 15);
-    el.detailBody.innerHTML = `
-      <div class="detail-hero">
-        <div class="press">관심도 ${iss.score.toLocaleString("ko-KR")} · 연계 ${iss.count}건 · 매체 ${iss.pressCount}</div>
-        <h3>${escapeHtml(lead.title)}</h3>
-        <div class="sum">${escapeHtml(lead.summary || "")}</div>
-        <div class="item__actions">
-          <a class="btn-sm btn-sm--primary" href="${escapeAttr(lead.url)}" target="_blank" rel="noopener noreferrer">대표 원문</a>
-        </div>
-      </div>
-      <div class="detail-section">
-        <h4>관련 보도 모음</h4>
-        ${rest
-          .map(
-            (r) => `<a class="rel" href="${escapeAttr(r.url)}" target="_blank" rel="noopener noreferrer">
-              ${escapeHtml(r.title)}
-              <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}</span>
-            </a>`
-          )
-          .join("")}
-      </div>`;
-    openSheet(el.detailSheet, true);
+    showDetail(iss.lead.id, { push: true });
   }
 
   function renderView() {
     renderPeriod();
+    renderHero();
     if (state.view === "latest") renderLatest(false);
     else if (state.view === "popular") renderPopular();
     else renderReport();
   }
 
   function refreshDataViews() {
-    state.filteredArticles = filterByMonth(state.data.articles).sort((a, b) =>
-      a.date < b.date ? 1 : a.date > b.date ? -1 : 0
-    );
+    state.filteredArticles = applyFilters(state.data.articles);
     state.issues = buildIssues(state.filteredArticles);
     renderDateList();
+    renderRails();
     renderView();
+    el.searchClear.hidden = !state.q;
   }
 
   function mountData(data, { toast } = {}) {
@@ -499,6 +620,11 @@
     }
   }
 
+  function onTagClick(tag) {
+    state.tagFilter = state.tagFilter === tag ? null : tag;
+    refreshDataViews();
+  }
+
   function bind() {
     if (state.bound) return;
     state.bound = true;
@@ -515,11 +641,43 @@
       });
     });
 
+    el.searchForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      state.q = el.q.value;
+      refreshDataViews();
+    });
+    el.q.addEventListener(
+      "input",
+      debounce(() => {
+        state.q = el.q.value;
+        refreshDataViews();
+      }, 200)
+    );
+    el.searchClear.addEventListener("click", () => {
+      state.q = "";
+      el.q.value = "";
+      refreshDataViews();
+    });
+
     el.dateBtn.addEventListener("click", () => openSheet(el.dateSheet, el.dateSheet.hidden));
     el.dateClose.addEventListener("click", () => openSheet(el.dateSheet, false));
     el.dateDim.addEventListener("click", () => openSheet(el.dateSheet, false));
     el.detailClose.addEventListener("click", () => openSheet(el.detailSheet, false));
     el.detailDim.addEventListener("click", () => openSheet(el.detailSheet, false));
+    el.readerBack.addEventListener("click", () => {
+      if (state.previewStack.length < 2) return;
+      state.previewStack.pop();
+      const prev = state.previewStack[state.previewStack.length - 1];
+      showDetail(prev, { push: false });
+    });
+
+    el.detailBody.addEventListener("click", (e) => {
+      const preview = e.target.closest("[data-preview]");
+      if (preview) {
+        e.preventDefault();
+        showDetail(preview.dataset.preview);
+      }
+    });
 
     el.dateList.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-month]");
@@ -530,7 +688,37 @@
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
 
+    const railClick = (e) => {
+      const tag = e.target.closest("[data-tag]");
+      if (tag) {
+        onTagClick(tag.dataset.tag);
+        return;
+      }
+      const month = e.target.closest("[data-month]");
+      if (month && month.dataset.month) {
+        state.month = month.dataset.month;
+        refreshDataViews();
+        return;
+      }
+      const issue = e.target.closest("[data-issue]");
+      if (issue) showIssue(issue.dataset.issue);
+    };
+    el.hotKeywords.addEventListener("click", railClick);
+    el.monthPulse.addEventListener("click", railClick);
+    el.miniRank.addEventListener("click", railClick);
+    el.mobileRails.addEventListener("click", railClick);
+    el.heroBand.addEventListener("click", (e) => {
+      const d = e.target.closest("[data-detail]");
+      if (d) showDetail(d.dataset.detail);
+    });
+
     el.main.addEventListener("click", (e) => {
+      const preview = e.target.closest("[data-preview]");
+      if (preview) {
+        e.preventDefault();
+        showDetail(preview.dataset.preview);
+        return;
+      }
       const detail = e.target.closest("[data-detail]");
       if (detail) {
         e.preventDefault();
@@ -552,6 +740,14 @@
       }
     });
 
+    el.main.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const item = e.target.closest(".item[data-detail]");
+      if (!item) return;
+      e.preventDefault();
+      showDetail(item.dataset.detail);
+    });
+
     el.syncBtn.addEventListener("click", () => syncFromDoc({ silent: false }));
     el.toTop.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
     window.addEventListener(
@@ -562,9 +758,7 @@
         if (state.latestShown >= state.filteredArticles.length) return;
         const sentinel = document.getElementById("sentinel");
         if (!sentinel) return;
-        if (sentinel.getBoundingClientRect().top < window.innerHeight + 400) {
-          renderLatest(true);
-        }
+        if (sentinel.getBoundingClientRect().top < window.innerHeight + 400) renderLatest(true);
       },
       { passive: true }
     );
@@ -600,7 +794,7 @@
         const pct = 8 + Math.min(ratio || received / 2_000_000, 1) * 70;
         setProgress(pct, ratio ? `다운로드 ${Math.round(ratio * 100)}%` : "다운로드 중…");
       });
-      setProgress(90, "이슈 정리 중…");
+      setProgress(90, "대시보드 구성 중…");
       mountData(data);
       finishBoot();
       return;
