@@ -488,24 +488,24 @@
       ${side}
       <div class="expand__site" hidden>
         <div class="expand__site-bar">
-          <strong>원문 미리보기</strong>
-          <div class="expand__site-bar-actions">
-            <a class="site-ico" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer" title="새 창에서 열기" aria-label="새 창에서 열기">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <div class="expand__site-bar-lead">
+            <strong>원문 미리보기</strong>
+            <a class="site-ico site-ico--open" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer" title="새 창" aria-label="새 창에서 원문 기사 열기">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M14 4h6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M10 14L20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
                 <path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </a>
-            <button type="button" class="site-ico" data-site-close title="미리보기 닫기" aria-label="미리보기 닫기">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-              </svg>
-            </button>
           </div>
+          <button type="button" class="site-ico" data-site-close title="미리보기 닫기" aria-label="미리보기 닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
         <iframe class="expand__site-frame" title="원문 미리보기" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" data-src="${escapeAttr(a.url)}"></iframe>
-        <p class="expand__site-note">일부 언론사는 보안 정책으로 미리보기가 비어 보일 수 있습니다. 그때는 우측 상단 새 창 아이콘을 이용하세요.</p>
+        <p class="expand__site-note">일부 언론사는 보안 정책으로 미리보기가 비어 보일 수 있습니다. 그때는 「원문 미리보기」 옆 새 창 아이콘을 이용하세요.</p>
       </div>
     </div>`;
   }

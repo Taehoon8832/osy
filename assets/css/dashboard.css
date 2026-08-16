@@ -651,16 +651,16 @@ button { background: none; border: 0; cursor: pointer; }
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
+.expand__site-bar-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
 .expand__site-bar strong {
   font-size: .72rem;
   font-weight: 700;
   color: var(--ink);
-}
-.expand__site-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
 }
 .site-ico {
   width: 36px;
@@ -671,6 +671,11 @@ button { background: none; border: 0; cursor: pointer; }
   color: var(--ink-2);
   flex-shrink: 0;
   transition: background .15s, color .15s;
+}
+.site-ico--open {
+  width: 30px;
+  height: 30px;
+  color: var(--muted);
 }
 .site-ico:hover {
   background: #fff;
