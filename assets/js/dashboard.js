@@ -26,6 +26,7 @@
     bootPct: document.getElementById("bootPct"),
     bootMsg: document.getElementById("bootMsg"),
     app: document.getElementById("app"),
+    topBar: document.getElementById("topBar"),
     main: document.getElementById("main"),
     periodLabel: document.getElementById("periodLabel"),
     viewHint: document.getElementById("viewHint"),
@@ -417,7 +418,7 @@
     const relHtml = rel.length
       ? rel
           .map(
-            (r) => `<button type="button" class="expand__rel" data-preview="${escapeAttr(r.id)}">
+            (r) => `<button type="button" class="expand__rel" data-inline-preview="${escapeAttr(r.id)}">
               <strong>${escapeHtml(r.title)}</strong>
               <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}</span>
             </button>`
@@ -432,6 +433,17 @@
         ${relHtml}
       </aside>`,
     };
+  }
+
+  function itemHeadHtml(a) {
+    const tag = a.tags?.[0] || "";
+    return `<div class="item__top">
+        <time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
+        <span>${escapeHtml(a.press)}</span>
+        ${tag ? `<span class="item__tag">${escapeHtml(tag)}</span>` : ""}
+      </div>
+      <h3 class="item__title">${escapeHtml(a.title)}</h3>
+      ${a.summary ? `<p class="item__sum">${escapeHtml(a.summary)}</p>` : ""}`;
   }
 
   function expandBodyHtml(a, { collapse = true } = {}) {
@@ -454,15 +466,8 @@
   }
 
   function itemHtml(a) {
-    const tag = a.tags?.[0] || "";
     return `<article class="item" data-expand-id="${escapeAttr(a.id)}" tabindex="0" role="button" aria-expanded="false" aria-label="${escapeAttr(a.title)}">
-      <div class="item__top">
-        <time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
-        <span>${escapeHtml(a.press)}</span>
-        ${tag ? `<span class="item__tag">${escapeHtml(tag)}</span>` : ""}
-      </div>
-      <h3 class="item__title">${escapeHtml(a.title)}</h3>
-      ${a.summary ? `<p class="item__sum">${escapeHtml(a.summary)}</p>` : ""}
+      ${itemHeadHtml(a)}
       <p class="item__hint">탭하여 펼쳐 미리보기 →</p>
       <div class="item__panel" aria-hidden="true">
         <div class="item__panel-inner">${expandBodyHtml(a)}</div>
@@ -494,14 +499,11 @@
     el.previewDock.classList.remove("is-on");
   }
 
-  function renderPreviewDock(a) {
-    if (!el.previewDock || !a) return;
+  function dockHtml(a) {
     const weekShort = a.week
       ? escapeHtml(String(a.week).replace(/^진학\s*뉴스\s*/i, "").replace(/\.$/, ""))
       : "";
-    el.previewDock.hidden = false;
-    el.previewDock.classList.add("is-on");
-    el.previewDock.innerHTML = `
+    return `
       <div class="preview-dock__bar">
         <p class="preview-dock__eye">미리보기</p>
         <button type="button" class="btn-sm" data-dock-close>닫기</button>
@@ -513,9 +515,66 @@
       </div>
       <h3 class="preview-dock__title">${escapeHtml(a.title)}</h3>
       ${expandBodyHtml(a, { collapse: false })}`;
-    requestAnimationFrame(() => {
-      el.previewDock.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
+  }
+
+  function renderPreviewDock(a, { scroll = true } = {}) {
+    if (!el.previewDock || !a) return;
+    el.previewDock.hidden = false;
+    el.previewDock.classList.add("is-on");
+    el.previewDock.dataset.viewingId = a.id;
+    el.previewDock.innerHTML = dockHtml(a);
+    if (scroll) {
+      requestAnimationFrame(() => {
+        el.previewDock.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    }
+  }
+
+  function swapItemPreview(card, a) {
+    if (!card || !a) return;
+    card.classList.add("is-swapping");
+    const apply = () => {
+      const tag = a.tags?.[0] || "";
+      const top = card.querySelector(".item__top");
+      const title = card.querySelector(".item__title");
+      const sum = card.querySelector(".item__sum");
+      const panelInner = card.querySelector(".item__panel-inner");
+      if (top) {
+        top.innerHTML = `<time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
+          <span>${escapeHtml(a.press)}</span>
+          ${tag ? `<span class="item__tag">${escapeHtml(tag)}</span>` : ""}`;
+      }
+      if (title) title.textContent = a.title;
+      if (sum) sum.textContent = a.summary || "";
+      else if (a.summary && title) {
+        title.insertAdjacentHTML("afterend", `<p class="item__sum">${escapeHtml(a.summary)}</p>`);
+      }
+      if (panelInner) panelInner.innerHTML = expandBodyHtml(a);
+      card.dataset.viewingId = a.id;
+      card.setAttribute("aria-label", a.title);
+      card.classList.remove("is-swapping");
+    };
+    window.setTimeout(apply, 90);
+  }
+
+  function openInlinePreview(articleId, fromEl) {
+    const a = findArticle(articleId);
+    if (!a) return;
+    const item = fromEl?.closest?.(".item.is-open");
+    if (item) {
+      swapItemPreview(item, a);
+      return;
+    }
+    const dock = fromEl?.closest?.(".preview-dock");
+    if (dock && el.previewDock && !el.previewDock.hidden) {
+      el.previewDock.classList.add("is-swapping");
+      window.setTimeout(() => {
+        renderPreviewDock(a, { scroll: false });
+        el.previewDock.classList.remove("is-swapping");
+      }, 90);
+      return;
+    }
+    openPreview(articleId);
   }
 
   function expandItem(articleId, { toggle = true, scroll = true } = {}) {
@@ -524,7 +583,15 @@
     const willOpen = toggle ? !card.classList.contains("is-open") : true;
     collapseAllItems(willOpen ? articleId : null);
     setItemOpen(card, willOpen);
-    if (willOpen) closePreviewDock();
+    if (willOpen) {
+      closePreviewDock();
+      const a = findArticle(articleId);
+      if (a) {
+        card.dataset.viewingId = a.id;
+        const panelInner = card.querySelector(".item__panel-inner");
+        if (panelInner) panelInner.innerHTML = expandBodyHtml(a);
+      }
+    }
     if (willOpen && scroll) {
       requestAnimationFrame(() => {
         card.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -678,6 +745,7 @@
     if (data.meta.source) el.sourceLink.href = data.meta.source;
     refreshDataViews();
     el.app.hidden = false;
+    if (el.topBar) el.topBar.hidden = false;
     const live = data.meta.live ? "실시간" : "캐시";
     setSyncStatus(`${live} · ${formatTime(data.meta.updated || Date.now())}`, "ok");
     if (toast && changed) {
@@ -792,6 +860,13 @@
         closePreviewDock();
         return;
       }
+      const inline = e.target.closest("[data-inline-preview]");
+      if (inline) {
+        e.preventDefault();
+        e.stopPropagation();
+        openInlinePreview(inline.dataset.inlinePreview, inline);
+        return;
+      }
       const preview = e.target.closest("[data-preview]");
       if (preview) {
         e.preventDefault();
@@ -808,7 +883,7 @@
       }
       const item = e.target.closest(".item[data-expand-id]");
       if (item) {
-        if (e.target.closest(".item__panel") && !e.target.closest("[data-collapse], [data-preview]")) {
+        if (e.target.closest(".item__panel") && !e.target.closest("[data-collapse], [data-inline-preview]")) {
           return;
         }
         e.preventDefault();
