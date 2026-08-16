@@ -1,0 +1,6 @@
+.DS_Store
+Thumbs.db
+*.tmp
+scripts/_source.txt
+data/_meta_check.txt
+.vscode/
