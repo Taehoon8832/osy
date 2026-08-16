@@ -2,8 +2,9 @@
   "use strict";
 
   const POLL_MS = 3 * 60 * 1000;
-  const CACHE_KEY = "osy-news-cache-v5";
-  const LATEST_PAGE = 40;
+  const CACHE_KEY = "osy-news-cache-v6";
+  const LATEST_PAGE = 12;
+  const isNarrow = () => window.matchMedia("(max-width: 959px)").matches;
 
   const state = {
     data: null,
@@ -105,14 +106,18 @@
   }
 
   function writeCache(data) {
-    try {
-      localStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({ savedAt: Date.now(), fingerprint: data.meta.fingerprint, data })
-      );
-    } catch {
-      /* quota */
-    }
+    const save = () => {
+      try {
+        localStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify({ savedAt: Date.now(), fingerprint: data.meta.fingerprint, data })
+        );
+      } catch {
+        /* quota */
+      }
+    };
+    if (typeof requestIdleCallback === "function") requestIdleCallback(save, { timeout: 2500 });
+    else setTimeout(save, 0);
   }
 
   async function fetchBytesWithProgress(url, { cache = "no-store", onProgress } = {}) {
@@ -136,6 +141,16 @@
     return new Blob(chunks).text();
   }
 
+  function withTimeout(promise, ms, label = "timeout") {
+    let timer;
+    return Promise.race([
+      promise.finally(() => clearTimeout(timer)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(label)), ms);
+      }),
+    ]);
+  }
+
   async function loadLiveDoc(onProgress) {
     const text = await fetchBytesWithProgress(window.NewsDoc.DOC_EXPORT_URL, {
       cache: "no-store",
@@ -148,7 +163,7 @@
 
   async function loadFallbackJson(onProgress) {
     const text = await fetchBytesWithProgress("data/news.json", {
-      cache: "no-cache",
+      cache: "force-cache",
       onProgress,
     });
     const data = JSON.parse(text);
@@ -304,69 +319,73 @@
       <h1>${escapeHtml(lead.title)}</h1>
       <p>${escapeHtml(lead.summary || `${lead.press} · ${formatShortDate(lead.date)}`)}</p>
       <div class="hero-band__actions">
-        <button type="button" class="btn-sm btn-sm--primary" data-preview="${escapeAttr(lead.id)}" style="background:#fff;color:#075c3a;box-shadow:none">펼쳐 미리보기</button>
+        <button type="button" class="btn-sm btn-sm--primary" data-preview="${escapeAttr(lead.id)}" style="background:#fff;color:#0b6b45">펼쳐 미리보기</button>
       </div>`;
   }
 
   function renderRails() {
     const m = state.data.meta;
     const count = state.filteredArticles.length;
-    el.statGrid.innerHTML = `
-      <div class="stat"><b>${count.toLocaleString("ko-KR")}</b><span>표시 기사</span></div>
-      <div class="stat"><b>${state.issues.length}</b><span>이슈 클러스터</span></div>
-      <div class="stat"><b>${m.weekCount}</b><span>주간</span></div>
-      <div class="stat"><b>${m.pressCount}</b><span>매체</span></div>`;
-
     const months = (state.data.months || [])
       .filter((mo) => mo.month >= 1 && mo.month <= 12)
       .slice(0, 12);
     const maxM = Math.max(...months.map((x) => x.count), 1);
-    el.monthPulse.innerHTML =
-      `<button type="button" class="pulse__row${state.month === "all" ? " is-on" : ""}" data-month="all" aria-pressed="${state.month === "all"}">
-        <span class="pulse__check" aria-hidden="true"></span>
-        <span class="pulse__label">전체</span>
-        <span class="pulse__track"><span class="pulse__fill" style="width:100%"></span></span>
-        <span class="pulse__n">${state.data.meta.total}</span>
-      </button>` +
-      months
-        .map((mo) => {
-          const key = `${mo.year}-${String(mo.month).padStart(2, "0")}`;
-          const on = state.month === key;
-          const pct = Math.round((mo.count / maxM) * 100);
-          return `<button type="button" class="pulse__row${on ? " is-on" : ""}" data-month="${key}" aria-pressed="${on}">
-            <span class="pulse__check" aria-hidden="true"></span>
-            <span class="pulse__label">${String(mo.month).padStart(2, "0")}월</span>
-            <span class="pulse__track"><span class="pulse__fill" style="width:${pct}%"></span></span>
-            <span class="pulse__n">${mo.count}</span>
-          </button>`;
-        })
+    const tags = (state.data.tags || []).slice(0, isNarrow() ? 10 : 14);
+    const narrow = isNarrow();
+
+    if (!narrow) {
+      el.statGrid.innerHTML = `
+        <div class="stat"><b>${count.toLocaleString("ko-KR")}</b><span>표시 기사</span></div>
+        <div class="stat"><b>${state.issues.length}</b><span>이슈 클러스터</span></div>
+        <div class="stat"><b>${m.weekCount}</b><span>주간</span></div>
+        <div class="stat"><b>${m.pressCount}</b><span>매체</span></div>`;
+
+      el.monthPulse.innerHTML =
+        `<button type="button" class="pulse__row${state.month === "all" ? " is-on" : ""}" data-month="all" aria-pressed="${state.month === "all"}">
+          <span class="pulse__check" aria-hidden="true"></span>
+          <span class="pulse__label">전체</span>
+          <span class="pulse__track"><span class="pulse__fill" style="width:100%"></span></span>
+          <span class="pulse__n">${state.data.meta.total}</span>
+        </button>` +
+        months
+          .map((mo) => {
+            const key = `${mo.year}-${String(mo.month).padStart(2, "0")}`;
+            const on = state.month === key;
+            const pct = Math.round((mo.count / maxM) * 100);
+            return `<button type="button" class="pulse__row${on ? " is-on" : ""}" data-month="${key}" aria-pressed="${on}">
+              <span class="pulse__check" aria-hidden="true"></span>
+              <span class="pulse__label">${String(mo.month).padStart(2, "0")}월</span>
+              <span class="pulse__track"><span class="pulse__fill" style="width:${pct}%"></span></span>
+              <span class="pulse__n">${mo.count}</span>
+            </button>`;
+          })
+          .join("");
+
+      el.hotKeywords.innerHTML = tags
+        .map(
+          (t) =>
+            `<button type="button" class="${state.tagFilter === t.name ? "is-on" : ""}" data-tag="${escapeAttr(t.name)}">${escapeHtml(t.name)} · ${t.count}</button>`
+        )
         .join("");
 
-    const tags = (state.data.tags || []).slice(0, 14);
-    el.hotKeywords.innerHTML = tags
-      .map(
-        (t) =>
-          `<button type="button" class="${state.tagFilter === t.name ? "is-on" : ""}" data-tag="${escapeAttr(t.name)}">${escapeHtml(t.name)} · ${t.count}</button>`
-      )
-      .join("");
+      el.miniRank.innerHTML = state.issues
+        .slice(0, 8)
+        .map(
+          (iss, i) => `<button type="button" data-issue="${escapeAttr(iss.id)}">
+            <span class="n">${i + 1}</span>
+            <span><span class="t">${escapeHtml(iss.tag)} ${escapeHtml(iss.lead.title)}</span>
+            <span class="s">관심도 ${iss.score} · ${iss.count}건</span></span>
+          </button>`
+        )
+        .join("");
+      el.mobileRails.innerHTML = "";
+      return;
+    }
 
-    el.miniRank.innerHTML = state.issues
-      .slice(0, 8)
-      .map(
-        (iss, i) => `<button type="button" data-issue="${escapeAttr(iss.id)}">
-          <span class="n">${i + 1}</span>
-          <span><span class="t">${escapeHtml(iss.tag)} ${escapeHtml(iss.lead.title)}</span>
-          <span class="s">관심도 ${iss.score} · ${iss.count}건</span></span>
-        </button>`
-      )
-      .join("");
-
-    // Mobile condensed rails
     el.mobileRails.innerHTML = `
       <section class="glass glass--accent">
         <h2 class="glass__title">핫 키워드</h2>
         <div class="kw">${tags
-          .slice(0, 10)
           .map(
             (t) =>
               `<button type="button" class="${state.tagFilter === t.name ? "is-on" : ""}" data-tag="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>`
@@ -374,11 +393,14 @@
           .join("")}</div>
       </section>
       <section class="glass">
-        <h2 class="glass__title">브리핑 요약</h2>
-        <div class="stat-grid">
-          <div class="stat"><b>${count.toLocaleString("ko-KR")}</b><span>표시 기사</span></div>
-          <div class="stat"><b>${state.issues.slice(0, 1)[0]?.score || 0}</b><span>최고 관심도</span></div>
-        </div>
+        <h2 class="glass__title">빠른 필터 · ${count.toLocaleString("ko-KR")}건</h2>
+        <div class="kw kw--months">${[
+          `<button type="button" class="${state.month === "all" ? "is-on" : ""}" data-month="all">전체</button>`,
+          ...months.slice(0, 6).map((mo) => {
+            const key = `${mo.year}-${String(mo.month).padStart(2, "0")}`;
+            return `<button type="button" class="${state.month === key ? "is-on" : ""}" data-month="${key}">${mo.month}월</button>`;
+          }),
+        ].join("")}</div>
       </section>`;
   }
 
@@ -458,21 +480,73 @@
         ${tags ? `<div class="expand__tags tags">${tags}</div>` : ""}
         <div class="expand__actions">
           ${collapse ? `<button type="button" class="btn-sm" data-collapse>접기</button>` : ""}
-          <a class="btn-sm btn-sm--primary" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer">원문 사이트</a>
+          <button type="button" class="btn-sm btn-sm--primary" data-site-preview>원문 사이트</button>
         </div>
       </div>
       ${side}
+      <div class="expand__site" hidden>
+        <div class="expand__site-bar">
+          <strong>원문 미리보기</strong>
+          <div class="expand__site-bar-actions">
+            <a class="btn-sm" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer">새 탭</a>
+            <button type="button" class="btn-sm" data-site-close>닫기</button>
+          </div>
+        </div>
+        <iframe class="expand__site-frame" title="원문 미리보기" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" data-src="${escapeAttr(a.url)}"></iframe>
+        <p class="expand__site-note">일부 언론사는 보안 정책으로 미리보기가 비어 보일 수 있습니다. 그때는 위의 요약으로 확인하거나 ‘새 탭’을 이용하세요.</p>
+      </div>
     </div>`;
   }
 
+  function toggleSitePreview(root, { force } = {}) {
+    const expand = root?.closest?.(".expand") || root?.querySelector?.(".expand");
+    if (!expand) return;
+    const site = expand.querySelector(".expand__site");
+    const btn = expand.querySelector("[data-site-preview]");
+    const frame = site?.querySelector(".expand__site-frame");
+    if (!site || !frame) return;
+    const show = force != null ? force : site.hidden;
+    site.hidden = !show;
+    if (btn) btn.textContent = show ? "원문 닫기" : "원문 사이트";
+    if (show) {
+      if (!frame.getAttribute("src")) {
+        const src = frame.dataset.src;
+        if (src) frame.setAttribute("src", src);
+      }
+      requestAnimationFrame(() => {
+        site.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    } else {
+      frame.removeAttribute("src");
+    }
+  }
+
   function itemHtml(a) {
+    const tag = a.tags?.[0] || "";
+    const sumRaw = a.summary || "";
+    const sum =
+      sumRaw.length > 140 ? `${sumRaw.slice(0, 140)}…` : sumRaw;
     return `<article class="item" data-expand-id="${escapeAttr(a.id)}" tabindex="0" role="button" aria-expanded="false" aria-label="${escapeAttr(a.title)}">
-      ${itemHeadHtml(a)}
+      <div class="item__top">
+        <time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
+        <span>${escapeHtml(a.press)}</span>
+        ${tag ? `<span class="item__tag">${escapeHtml(tag)}</span>` : ""}
+      </div>
+      <h3 class="item__title">${escapeHtml(a.title)}</h3>
+      ${sum ? `<p class="item__sum">${escapeHtml(sum)}</p>` : ""}
       <p class="item__hint">탭하여 펼쳐 미리보기 →</p>
       <div class="item__panel" aria-hidden="true">
-        <div class="item__panel-inner">${expandBodyHtml(a)}</div>
+        <div class="item__panel-inner"></div>
       </div>
     </article>`;
+  }
+
+  function fillItemPanel(card, a, { force = false } = {}) {
+    const panelInner = card.querySelector(".item__panel-inner");
+    if (!panelInner || !a) return;
+    if (!force && panelInner.dataset.filled === a.id) return;
+    panelInner.innerHTML = expandBodyHtml(a);
+    panelInner.dataset.filled = a.id;
   }
 
   function setItemOpen(card, open) {
@@ -538,23 +612,22 @@
       const top = card.querySelector(".item__top");
       const title = card.querySelector(".item__title");
       const sum = card.querySelector(".item__sum");
-      const panelInner = card.querySelector(".item__panel-inner");
       if (top) {
         top.innerHTML = `<time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
           <span>${escapeHtml(a.press)}</span>
           ${tag ? `<span class="item__tag">${escapeHtml(tag)}</span>` : ""}`;
       }
       if (title) title.textContent = a.title;
-      if (sum) sum.textContent = a.summary || "";
-      else if (a.summary && title) {
-        title.insertAdjacentHTML("afterend", `<p class="item__sum">${escapeHtml(a.summary)}</p>`);
+      if (sum) {
+        const text = a.summary || "";
+        sum.textContent = text.length > 140 ? `${text.slice(0, 140)}…` : text;
       }
-      if (panelInner) panelInner.innerHTML = expandBodyHtml(a);
+      fillItemPanel(card, a, { force: true });
       card.dataset.viewingId = a.id;
       card.setAttribute("aria-label", a.title);
       card.classList.remove("is-swapping");
     };
-    window.setTimeout(apply, 90);
+    window.setTimeout(apply, 60);
   }
 
   function openInlinePreview(articleId, fromEl) {
@@ -588,8 +661,7 @@
       const a = findArticle(articleId);
       if (a) {
         card.dataset.viewingId = a.id;
-        const panelInner = card.querySelector(".item__panel-inner");
-        if (panelInner) panelInner.innerHTML = expandBodyHtml(a);
+        fillItemPanel(card, a);
       }
     }
     if (willOpen && scroll) {
@@ -627,11 +699,14 @@
     const list = state.filteredArticles;
     if (!append) {
       state.latestShown = 0;
+      if (state._feedIO) state._feedIO.disconnect();
       if (!list.length) {
         el.main.innerHTML = `<p class="empty">검색·기간 조건에 맞는 이슈가 없습니다.</p>`;
         return;
       }
       el.main.innerHTML = `<div class="feed" id="feed"></div><div id="sentinel" aria-hidden="true"></div>`;
+      const sentinel = document.getElementById("sentinel");
+      if (sentinel && state._feedIO) state._feedIO.observe(sentinel);
     }
     const feed = document.getElementById("feed");
     if (!feed) return;
@@ -647,7 +722,7 @@
       return;
     }
     el.main.innerHTML = `<div class="pop">${state.issues
-      .slice(0, 40)
+      .slice(0, isNarrow() ? 24 : 36)
       .map((iss) => {
         const pct = Math.round((iss.score / maxScore) * 100);
         return `<button type="button" class="pop-card" data-issue="${escapeAttr(iss.id)}">
@@ -667,37 +742,32 @@
   }
 
   function renderReport() {
-    const articles = state.filteredArticles.slice(0, 60);
+    const articles = state.filteredArticles.slice(0, isNarrow() ? 24 : 40);
     if (!articles.length) {
       el.main.innerHTML = `<p class="empty">보고서 항목이 없습니다.</p>`;
       return;
     }
     el.main.innerHTML = `<div class="report-grid">${articles
       .map((a, idx) => {
-        const rel = relatedArticles(a, 5);
+        const open = idx < 1;
         const tags = (a.tags || [])
-          .slice(0, 5)
+          .slice(0, 4)
           .map((t) => `<span>${escapeHtml(t)}</span>`)
           .join("");
-        const relHtml = rel.length
-          ? rel
-              .map(
-                (r) => `<button type="button" class="rel" data-preview="${escapeAttr(r.id)}">
+        const body = open
+          ? (() => {
+              const rel = relatedArticles(a, 4);
+              const relHtml = rel.length
+                ? rel
+                    .map(
+                      (r) => `<button type="button" class="rel" data-preview="${escapeAttr(r.id)}">
                   <strong>${escapeHtml(r.title)}</strong>
                   <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}</span>
                 </button>`
-              )
-              .join("")
-          : `<p class="rel"><span>연계 보도 없음</span></p>`;
-        return `<article class="report-card${idx < 2 ? " is-open" : ""}">
-          <button type="button" class="report-card__head" data-toggle="1">
-            <div>
-              <h3>${escapeHtml(a.title)}</h3>
-              <div class="meta">${formatShortDate(a.date)} · ${escapeHtml(a.press)} · 연계 ${rel.length}</div>
-            </div>
-            <span class="report-card__chev">${idx < 2 ? "접기" : "펼치기"}</span>
-          </button>
-          <div class="report-card__body">
+                    )
+                    .join("")
+                : `<p class="rel"><span>연계 보도 없음</span></p>`;
+              return `<div class="report-card__body">
             <div class="report-card__detail">
               <div class="expand__prose">${formatProse(a.summary || "세부 요약이 없습니다.")}</div>
               <div class="tags">${tags}</div>
@@ -706,7 +776,18 @@
               </div>
             </div>
             <div class="report-card__links"><h4>연계 내용</h4>${relHtml}</div>
-          </div>
+          </div>`;
+            })()
+          : `<div class="report-card__body"></div>`;
+        return `<article class="report-card${open ? " is-open" : ""}" data-report-id="${escapeAttr(a.id)}">
+          <button type="button" class="report-card__head" data-toggle="1">
+            <div>
+              <h3>${escapeHtml(a.title)}</h3>
+              <div class="meta">${formatShortDate(a.date)} · ${escapeHtml(a.press)}</div>
+            </div>
+            <span class="report-card__chev">${open ? "접기" : "펼치기"}</span>
+          </button>
+          ${body}
         </article>`;
       })
       .join("")}</div>`;
@@ -759,16 +840,24 @@
     state.syncing = true;
     el.syncBtn.classList.add("is-busy");
     if (!silent) setSyncStatus("동기화 중…", "busy");
+    else if (state.data) setSyncStatus("백그라운드 동기화…", "busy");
     try {
-      const data = await loadLiveDoc();
+      const data = await withTimeout(loadLiveDoc(), silent ? 18000 : 28000, "doc-timeout");
       const changed = state.fingerprint !== data.meta.fingerprint;
       if (changed || !state.data) {
         mountData(data, { toast: silent && changed });
         if (!silent && changed) showToast("최신 Doc 반영");
-      } else if (!silent) setSyncStatus(`최신 · ${formatTime(Date.now())}`, "ok");
+        else if (!silent) setSyncStatus(`최신 · ${formatTime(Date.now())}`, "ok");
+      } else {
+        setSyncStatus(`최신 · ${formatTime(Date.now())}`, "ok");
+      }
     } catch (err) {
       console.warn(err);
-      setSyncStatus("동기화 실패", "err");
+      if (!silent) setSyncStatus("동기화 실패", "err");
+      else if (state.data) {
+        const label = state.data.meta.live ? "실시간" : "캐시";
+        setSyncStatus(`${label} · ${formatTime(state.data.meta.updated || Date.now())}`, "ok");
+      }
     } finally {
       state.syncing = false;
       el.syncBtn.classList.remove("is-busy");
@@ -860,6 +949,19 @@
         closePreviewDock();
         return;
       }
+      const siteClose = e.target.closest("[data-site-close]");
+      if (siteClose) {
+        e.preventDefault();
+        toggleSitePreview(siteClose, { force: false });
+        return;
+      }
+      const siteOpen = e.target.closest("[data-site-preview]");
+      if (siteOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSitePreview(siteOpen);
+        return;
+      }
       const inline = e.target.closest("[data-inline-preview]");
       if (inline) {
         e.preventDefault();
@@ -883,7 +985,10 @@
       }
       const item = e.target.closest(".item[data-expand-id]");
       if (item) {
-        if (e.target.closest(".item__panel") && !e.target.closest("[data-collapse], [data-inline-preview]")) {
+        if (
+          e.target.closest(".item__panel") &&
+          !e.target.closest("[data-collapse], [data-inline-preview], [data-site-preview], [data-site-close]")
+        ) {
           return;
         }
         e.preventDefault();
@@ -902,6 +1007,39 @@
         const open = card.classList.toggle("is-open");
         const chev = card.querySelector(".report-card__chev");
         if (chev) chev.textContent = open ? "접기" : "펼치기";
+        if (open) {
+          let body = card.querySelector(".report-card__body");
+          if (body && !body.querySelector(".report-card__detail")) {
+            const a = findArticle(card.dataset.reportId);
+            if (a) {
+              const rel = relatedArticles(a, 4);
+              const tags = (a.tags || [])
+                .slice(0, 4)
+                .map((t) => `<span>${escapeHtml(t)}</span>`)
+                .join("");
+              const relHtml = rel.length
+                ? rel
+                    .map(
+                      (r) => `<button type="button" class="rel" data-preview="${escapeAttr(r.id)}">
+                  <strong>${escapeHtml(r.title)}</strong>
+                  <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}</span>
+                </button>`
+                    )
+                    .join("")
+                : `<p class="rel"><span>연계 보도 없음</span></p>`;
+              body.outerHTML = `<div class="report-card__body">
+            <div class="report-card__detail">
+              <div class="expand__prose">${formatProse(a.summary || "세부 요약이 없습니다.")}</div>
+              <div class="tags">${tags}</div>
+              <div class="item__actions" style="margin-top:10px">
+                <button type="button" class="btn-sm btn-sm--primary" data-preview="${escapeAttr(a.id)}">미리보기</button>
+              </div>
+            </div>
+            <div class="report-card__links"><h4>연계 내용</h4>${relHtml}</div>
+          </div>`;
+            }
+          }
+        }
       }
     };
 
@@ -919,18 +1057,34 @@
 
     el.syncBtn.addEventListener("click", () => syncFromDoc({ silent: false }));
     el.toTop.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+
+    let scrollTick = false;
     window.addEventListener(
       "scroll",
       () => {
-        el.toTop.hidden = window.scrollY < 500;
-        if (state.view !== "latest") return;
-        if (state.latestShown >= state.filteredArticles.length) return;
-        const sentinel = document.getElementById("sentinel");
-        if (!sentinel) return;
-        if (sentinel.getBoundingClientRect().top < window.innerHeight + 400) renderLatest(true);
+        if (scrollTick) return;
+        scrollTick = true;
+        requestAnimationFrame(() => {
+          scrollTick = false;
+          el.toTop.hidden = window.scrollY < 480;
+        });
       },
       { passive: true }
     );
+
+    const io =
+      "IntersectionObserver" in window
+        ? new IntersectionObserver(
+            (entries) => {
+              if (!entries.some((e) => e.isIntersecting)) return;
+              if (state.view !== "latest") return;
+              if (state.latestShown >= state.filteredArticles.length) return;
+              renderLatest(true);
+            },
+            { rootMargin: "600px 0px" }
+          )
+        : null;
+    state._feedIO = io;
 
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
@@ -958,38 +1112,49 @@
 
   async function boot() {
     bind();
+    setProgress(8, "화면 준비 중…");
+
     const cached = readCache();
-    try {
-      setProgress(6, "Google Doc 연결 중…");
-      const data = await loadLiveDoc((ratio, received) => {
-        const pct = 8 + Math.min(ratio || received / 2_000_000, 1) * 70;
-        setProgress(pct, ratio ? `다운로드 ${Math.round(ratio * 100)}%` : "다운로드 중…");
-      });
-      setProgress(90, "대시보드 구성 중…");
-      mountData(data);
-      finishBoot();
-      return;
-    } catch (e) {
-      console.warn(e);
-    }
-
-    if (cached?.data) {
+    if (cached?.data?.articles?.length) {
+      setProgress(85, "저장된 데이터로 여는 중…");
       mountData(cached.data);
-      setSyncStatus(`오프라인 캐시 · ${formatTime(cached.savedAt)}`, "warn");
+      setSyncStatus(`캐시 · ${formatTime(cached.savedAt)}`, "ok");
       finishBoot();
-      syncFromDoc({ silent: true });
+      setTimeout(() => syncFromDoc({ silent: true }), 400);
       return;
     }
 
     try {
-      const data = await loadFallbackJson((ratio) => setProgress(40 + ratio * 45, "백업 로딩…"));
+      setProgress(15, "로컬 데이터 로딩…");
+      const data = await loadFallbackJson((ratio) => {
+        setProgress(15 + Math.min(ratio || 0, 1) * 70, "로딩 중…");
+      });
+      setProgress(92, "대시보드 구성 중…");
       mountData(data);
       finishBoot();
-      syncFromDoc({ silent: true });
+      setTimeout(() => syncFromDoc({ silent: true }), 400);
+      return;
+    } catch (err) {
+      console.warn(err);
+    }
+
+    try {
+      setProgress(10, "Google Doc 연결 중…");
+      const data = await withTimeout(
+        loadLiveDoc((ratio, received) => {
+          const pct = 12 + Math.min(ratio || received / 2_000_000, 1) * 70;
+          setProgress(pct, ratio ? `다운로드 ${Math.round(ratio * 100)}%` : "다운로드 중…");
+        }),
+        20000,
+        "doc-timeout"
+      );
+      setProgress(92, "대시보드 구성 중…");
+      mountData(data);
+      finishBoot();
     } catch (err) {
       console.error(err);
       setProgress(100, "실패");
-      el.bootMsg.textContent = "Doc를 불러오지 못했습니다.";
+      el.bootMsg.textContent = "데이터를 불러오지 못했습니다. 새로고침 해주세요.";
     }
   }
 
