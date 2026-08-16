@@ -151,7 +151,12 @@ def parse_doc(raw: str) -> dict:
         for week in sorted({a["week"] for a in articles}, reverse=True)
     ]
     month_keys = sorted(
-        {(int(a["date"][:4]), int(a["date"][5:7])) for a in articles}, reverse=True
+        {
+            (int(a["date"][:4]), int(a["date"][5:7]))
+            for a in articles
+            if 1 <= int(a["date"][5:7]) <= 12
+        },
+        reverse=True,
     )
     month_stats = [
         {

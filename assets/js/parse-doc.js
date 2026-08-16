@@ -183,7 +183,8 @@
     for (const a of articles) {
       const y = Number(a.date.slice(0, 4));
       const m = Number(a.date.slice(5, 7));
-      const key = `${y}-${m}`;
+      if (!y || m < 1 || m > 12) continue;
+      const key = `${y}-${String(m).padStart(2, "0")}`;
       monthMap.set(key, (monthMap.get(key) || 0) + 1);
     }
     const monthStats = [...monthMap.entries()]

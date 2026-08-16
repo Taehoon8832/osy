@@ -49,6 +49,7 @@
     detailClose: document.getElementById("detailClose"),
     detailDim: document.getElementById("detailDim"),
     readerBack: document.getElementById("readerBack"),
+    previewDock: document.getElementById("previewDock"),
     toTop: document.getElementById("toTop"),
     sourceLink: document.getElementById("sourceLink"),
     syncBtn: document.getElementById("syncBtn"),
@@ -57,9 +58,9 @@
   };
 
   const HINTS = {
-    latest: "카드를 누르면 페이지 안에서 바로 미리보기",
-    popular: "연관 보도·이슈 밀도 기준 인기 순위",
-    report: "제목·세부·연계를 펼쳐 보고, 미리보기로 이어 읽기",
+    latest: "카드를 누르면 같은 자리에서 펼쳐 미리보기",
+    popular: "이슈를 누르면 아래에서 바로 펼쳐 읽기",
+    report: "펼친 뒤 미리보기로 같은 페이지에서 이어 읽기",
   };
 
   const setProgress = (n, msg) => {
@@ -302,7 +303,7 @@
       <h1>${escapeHtml(lead.title)}</h1>
       <p>${escapeHtml(lead.summary || `${lead.press} · ${formatShortDate(lead.date)}`)}</p>
       <div class="hero-band__actions">
-        <button type="button" class="btn-sm btn-sm--primary" data-detail="${escapeAttr(lead.id)}" style="background:#fff;color:#075c3a;box-shadow:none">미리보기</button>
+        <button type="button" class="btn-sm btn-sm--primary" data-preview="${escapeAttr(lead.id)}" style="background:#fff;color:#075c3a;box-shadow:none">펼쳐 미리보기</button>
       </div>`;
   }
 
@@ -315,19 +316,30 @@
       <div class="stat"><b>${m.weekCount}</b><span>주간</span></div>
       <div class="stat"><b>${m.pressCount}</b><span>매체</span></div>`;
 
-    const months = state.data.months.slice(0, 8);
+    const months = (state.data.months || [])
+      .filter((mo) => mo.month >= 1 && mo.month <= 12)
+      .slice(0, 12);
     const maxM = Math.max(...months.map((x) => x.count), 1);
-    el.monthPulse.innerHTML = months
-      .map((mo) => {
-        const key = `${mo.year}-${String(mo.month).padStart(2, "0")}`;
-        const pct = Math.round((mo.count / maxM) * 100);
-        return `<button type="button" class="pulse__row" data-month="${key}" style="width:100%;background:none;border:0;padding:0;cursor:pointer">
-          <span>${String(mo.month).padStart(2, "0")}월</span>
-          <span class="pulse__track"><span class="pulse__fill" style="width:${pct}%;display:block;height:100%"></span></span>
-          <span>${mo.count}</span>
-        </button>`;
-      })
-      .join("");
+    el.monthPulse.innerHTML =
+      `<button type="button" class="pulse__row${state.month === "all" ? " is-on" : ""}" data-month="all" aria-pressed="${state.month === "all"}">
+        <span class="pulse__check" aria-hidden="true"></span>
+        <span class="pulse__label">전체</span>
+        <span class="pulse__track"><span class="pulse__fill" style="width:100%"></span></span>
+        <span class="pulse__n">${state.data.meta.total}</span>
+      </button>` +
+      months
+        .map((mo) => {
+          const key = `${mo.year}-${String(mo.month).padStart(2, "0")}`;
+          const on = state.month === key;
+          const pct = Math.round((mo.count / maxM) * 100);
+          return `<button type="button" class="pulse__row${on ? " is-on" : ""}" data-month="${key}" aria-pressed="${on}">
+            <span class="pulse__check" aria-hidden="true"></span>
+            <span class="pulse__label">${String(mo.month).padStart(2, "0")}월</span>
+            <span class="pulse__track"><span class="pulse__fill" style="width:${pct}%"></span></span>
+            <span class="pulse__n">${mo.count}</span>
+          </button>`;
+        })
+        .join("");
 
     const tags = (state.data.tags || []).slice(0, 14);
     el.hotKeywords.innerHTML = tags
@@ -387,6 +399,7 @@
       전체 기간<span>${state.data.meta.total}건</span></button>
       <div class="date-group">월별</div>`;
     for (const m of months) {
+      if (m.month < 1 || m.month > 12) continue;
       const key = `${m.year}-${String(m.month).padStart(2, "0")}`;
       html += `<button type="button" class="date-opt${state.month === key ? " is-on" : ""}" data-month="${key}">
         ${m.label}<span>${m.count}건</span></button>`;
@@ -394,9 +407,55 @@
     el.dateList.innerHTML = html;
   }
 
+  function expandParts(a) {
+    const tags = (a.tags || [])
+      .slice(0, 8)
+      .map((t) => `<span>${escapeHtml(t)}</span>`)
+      .join("");
+    const rel = relatedArticles(a, 5);
+    const prose = formatProse(a.summary);
+    const relHtml = rel.length
+      ? rel
+          .map(
+            (r) => `<button type="button" class="expand__rel" data-preview="${escapeAttr(r.id)}">
+              <strong>${escapeHtml(r.title)}</strong>
+              <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}</span>
+            </button>`
+          )
+          .join("")
+      : `<p class="expand__empty">연계 보도를 찾지 못했습니다.</p>`;
+    return {
+      tags,
+      prose,
+      side: `<aside class="expand__side">
+        <h4>연계 이슈 <em>${rel.length}</em></h4>
+        ${relHtml}
+      </aside>`,
+    };
+  }
+
+  function expandBodyHtml(a, { collapse = true } = {}) {
+    const { tags, prose, side } = expandParts(a);
+    return `<div class="expand">
+      <div class="expand__main">
+        ${
+          prose
+            ? `<div class="expand__prose">${prose}</div>`
+            : `<p class="expand__empty">요약 문장이 없습니다. 필요하면 원문에서 확인하세요.</p>`
+        }
+        ${tags ? `<div class="expand__tags tags">${tags}</div>` : ""}
+        <div class="expand__actions">
+          ${collapse ? `<button type="button" class="btn-sm" data-collapse>접기</button>` : ""}
+          <a class="btn-sm btn-sm--primary" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer">원문 사이트</a>
+        </div>
+      </div>
+      ${side}
+    </div>`;
+  }
+
   function itemHtml(a) {
     const tag = a.tags?.[0] || "";
-    return `<article class="item" data-detail="${escapeAttr(a.id)}" tabindex="0" role="button" aria-label="미리보기: ${escapeAttr(a.title)}">
+    return `<article class="item" data-expand-id="${escapeAttr(a.id)}" tabindex="0" role="button" aria-expanded="false" aria-label="${escapeAttr(a.title)}">
       <div class="item__top">
         <time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
         <span>${escapeHtml(a.press)}</span>
@@ -404,8 +463,97 @@
       </div>
       <h3 class="item__title">${escapeHtml(a.title)}</h3>
       ${a.summary ? `<p class="item__sum">${escapeHtml(a.summary)}</p>` : ""}
-      <p class="item__hint">탭하여 미리보기</p>
+      <p class="item__hint">탭하여 펼쳐 미리보기 →</p>
+      <div class="item__panel" aria-hidden="true">
+        <div class="item__panel-inner">${expandBodyHtml(a)}</div>
+      </div>
     </article>`;
+  }
+
+  function setItemOpen(card, open) {
+    if (!card) return;
+    card.classList.toggle("is-open", open);
+    card.setAttribute("aria-expanded", String(open));
+    const hint = card.querySelector(".item__hint");
+    if (hint) hint.textContent = open ? "접기 ▲" : "탭하여 펼쳐 미리보기 →";
+    const panel = card.querySelector(".item__panel");
+    if (panel) panel.setAttribute("aria-hidden", String(!open));
+  }
+
+  function collapseAllItems(exceptId) {
+    document.querySelectorAll(".item.is-open").forEach((card) => {
+      if (exceptId && card.dataset.expandId === exceptId) return;
+      setItemOpen(card, false);
+    });
+  }
+
+  function closePreviewDock() {
+    if (!el.previewDock) return;
+    el.previewDock.hidden = true;
+    el.previewDock.innerHTML = "";
+    el.previewDock.classList.remove("is-on");
+  }
+
+  function renderPreviewDock(a) {
+    if (!el.previewDock || !a) return;
+    const weekShort = a.week
+      ? escapeHtml(String(a.week).replace(/^진학\s*뉴스\s*/i, "").replace(/\.$/, ""))
+      : "";
+    el.previewDock.hidden = false;
+    el.previewDock.classList.add("is-on");
+    el.previewDock.innerHTML = `
+      <div class="preview-dock__bar">
+        <p class="preview-dock__eye">미리보기</p>
+        <button type="button" class="btn-sm" data-dock-close>닫기</button>
+      </div>
+      <div class="preview-dock__meta">
+        <span class="press">${escapeHtml(a.press)}</span>
+        <time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
+        ${weekShort ? `<span>${weekShort}</span>` : ""}
+      </div>
+      <h3 class="preview-dock__title">${escapeHtml(a.title)}</h3>
+      ${expandBodyHtml(a, { collapse: false })}`;
+    requestAnimationFrame(() => {
+      el.previewDock.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+
+  function expandItem(articleId, { toggle = true, scroll = true } = {}) {
+    const card = document.querySelector(`.item[data-expand-id="${CSS.escape(articleId)}"]`);
+    if (!card) return false;
+    const willOpen = toggle ? !card.classList.contains("is-open") : true;
+    collapseAllItems(willOpen ? articleId : null);
+    setItemOpen(card, willOpen);
+    if (willOpen) closePreviewDock();
+    if (willOpen && scroll) {
+      requestAnimationFrame(() => {
+        card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    }
+    return true;
+  }
+
+  function openPreview(articleId, { toggle = false } = {}) {
+    const a = findArticle(articleId);
+    if (!a) return;
+    openSheet(el.detailSheet, false);
+
+    if (expandItem(articleId, { toggle, scroll: true })) return;
+
+    if (state.view === "latest") {
+      const idx = state.filteredArticles.findIndex((x) => x.id === articleId);
+      if (idx >= 0) {
+        let guard = 0;
+        while (state.latestShown <= idx && guard < 30) {
+          renderLatest(true);
+          guard += 1;
+        }
+        if (expandItem(articleId, { toggle: false, scroll: true })) return;
+      }
+    }
+
+    collapseAllItems();
+    renderPreviewDock(a);
   }
 
   function renderLatest(append = false) {
@@ -467,7 +615,7 @@
         const relHtml = rel.length
           ? rel
               .map(
-                (r) => `<button type="button" class="rel reader__rel" data-preview="${escapeAttr(r.id)}">
+                (r) => `<button type="button" class="rel" data-preview="${escapeAttr(r.id)}">
                   <strong>${escapeHtml(r.title)}</strong>
                   <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}</span>
                 </button>`
@@ -484,10 +632,10 @@
           </button>
           <div class="report-card__body">
             <div class="report-card__detail">
-              <div class="reader__prose" style="padding:0;max-width:none">${formatProse(a.summary || "세부 요약이 없습니다.")}</div>
+              <div class="expand__prose">${formatProse(a.summary || "세부 요약이 없습니다.")}</div>
               <div class="tags">${tags}</div>
               <div class="item__actions" style="margin-top:10px">
-                <button type="button" class="btn-sm btn-sm--primary" data-detail="${escapeAttr(a.id)}">미리보기</button>
+                <button type="button" class="btn-sm btn-sm--primary" data-preview="${escapeAttr(a.id)}">미리보기</button>
               </div>
             </div>
             <div class="report-card__links"><h4>연계 내용</h4>${relHtml}</div>
@@ -497,72 +645,10 @@
       .join("")}</div>`;
   }
 
-  function renderReader(a) {
-    const rel = relatedArticles(a, 10);
-    const tags = (a.tags || []).map((t) => `<span>${escapeHtml(t)}</span>`).join("");
-    const prose = formatProse(a.summary);
-    el.detailTitle.textContent = "미리보기";
-    el.detailBody.innerHTML = `
-      <div class="reader__hero">
-        <div class="reader__meta">
-          <span class="press">${escapeHtml(a.press)}</span>
-          <time datetime="${escapeAttr(a.date)}">${formatShortDate(a.date)}</time>
-          ${a.week ? `<span>${escapeHtml(a.week)}</span>` : ""}
-        </div>
-        <h3 class="reader__title">${escapeHtml(a.title)}</h3>
-      </div>
-      ${prose ? `<div class="reader__prose">${prose}</div>` : `<p class="reader__empty">요약 문장이 없습니다. 필요하면 원문 사이트에서 확인하세요.</p>`}
-      <div class="reader__tags tags">${tags}</div>
-      <div class="reader__actions">
-        <button type="button" class="btn-sm" id="toggleEmbed">사이트 미리보기</button>
-        <a class="btn-sm btn-sm--primary" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer">원문 사이트</a>
-      </div>
-      <div class="reader__embed" id="readerEmbed" hidden>
-        <iframe title="원문 미리보기" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" src="${escapeAttr(a.url)}"></iframe>
-        <p class="reader__embed-note">일부 언론사는 보안 정책으로 미리보기가 가려질 수 있습니다. 그럴 땐 위의 요약과 연계 이슈로 확인하세요.</p>
-      </div>
-      <section class="reader__section">
-        <h3>연계 이슈 · 탭하면 바로 미리보기</h3>
-        ${
-          rel.length
-            ? rel
-                .map(
-                  (r) => `<button type="button" class="reader__rel" data-preview="${escapeAttr(r.id)}">
-                    <strong>${escapeHtml(r.title)}</strong>
-                    <span>${escapeHtml(r.press)} · ${formatShortDate(r.date)}</span>
-                  </button>`
-                )
-                .join("")
-            : `<p class="reader__empty" style="padding:0">연계 보도를 찾지 못했습니다.</p>`
-        }
-      </section>`;
-    el.readerBack.hidden = state.previewStack.length < 2;
-    const toggle = document.getElementById("toggleEmbed");
-    const embed = document.getElementById("readerEmbed");
-    toggle?.addEventListener("click", () => {
-      const show = embed.hidden;
-      embed.hidden = !show;
-      toggle.textContent = show ? "미리보기 닫기" : "사이트 미리보기";
-      if (show) embed.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
-  }
-
-  function showDetail(articleId, { push = true } = {}) {
-    const a = findArticle(articleId);
-    if (!a) return;
-    if (push) {
-      const last = state.previewStack[state.previewStack.length - 1];
-      if (last !== articleId) state.previewStack.push(articleId);
-    }
-    renderReader(a);
-    openSheet(el.detailSheet, true);
-    el.detailBody.scrollTop = 0;
-  }
-
   function showIssue(tag) {
     const iss = state.issues.find((x) => x.id === tag);
     if (!iss) return;
-    showDetail(iss.lead.id, { push: true });
+    openPreview(iss.lead.id);
   }
 
   function renderView() {
@@ -576,6 +662,7 @@
   function refreshDataViews() {
     state.filteredArticles = applyFilters(state.data.articles);
     state.issues = buildIssues(state.filteredArticles);
+    closePreviewDock();
     renderDateList();
     renderRails();
     renderView();
@@ -636,6 +723,8 @@
           b.setAttribute("aria-selected", String(b === btn));
         });
         state.view = btn.dataset.view;
+        closePreviewDock();
+        collapseAllItems();
         window.scrollTo({ top: 0 });
         renderView();
       });
@@ -662,22 +751,8 @@
     el.dateBtn.addEventListener("click", () => openSheet(el.dateSheet, el.dateSheet.hidden));
     el.dateClose.addEventListener("click", () => openSheet(el.dateSheet, false));
     el.dateDim.addEventListener("click", () => openSheet(el.dateSheet, false));
-    el.detailClose.addEventListener("click", () => openSheet(el.detailSheet, false));
-    el.detailDim.addEventListener("click", () => openSheet(el.detailSheet, false));
-    el.readerBack.addEventListener("click", () => {
-      if (state.previewStack.length < 2) return;
-      state.previewStack.pop();
-      const prev = state.previewStack[state.previewStack.length - 1];
-      showDetail(prev, { push: false });
-    });
-
-    el.detailBody.addEventListener("click", (e) => {
-      const preview = e.target.closest("[data-preview]");
-      if (preview) {
-        e.preventDefault();
-        showDetail(preview.dataset.preview);
-      }
-    });
+    el.detailClose?.addEventListener("click", () => openSheet(el.detailSheet, false));
+    el.detailDim?.addEventListener("click", () => openSheet(el.detailSheet, false));
 
     el.dateList.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-month]");
@@ -696,7 +771,8 @@
       }
       const month = e.target.closest("[data-month]");
       if (month && month.dataset.month) {
-        state.month = month.dataset.month;
+        const next = month.dataset.month;
+        state.month = state.month === next && next !== "all" ? "all" : next;
         refreshDataViews();
         return;
       }
@@ -707,22 +783,36 @@
     el.monthPulse.addEventListener("click", railClick);
     el.miniRank.addEventListener("click", railClick);
     el.mobileRails.addEventListener("click", railClick);
-    el.heroBand.addEventListener("click", (e) => {
-      const d = e.target.closest("[data-detail]");
-      if (d) showDetail(d.dataset.detail);
-    });
 
-    el.main.addEventListener("click", (e) => {
+    const onPreviewClick = (e) => {
+      if (e.target.closest("a[href]")) return;
+      const dockClose = e.target.closest("[data-dock-close]");
+      if (dockClose) {
+        e.preventDefault();
+        closePreviewDock();
+        return;
+      }
       const preview = e.target.closest("[data-preview]");
       if (preview) {
         e.preventDefault();
-        showDetail(preview.dataset.preview);
+        openPreview(preview.dataset.preview);
         return;
       }
-      const detail = e.target.closest("[data-detail]");
-      if (detail) {
+      const collapse = e.target.closest("[data-collapse]");
+      if (collapse) {
         e.preventDefault();
-        showDetail(detail.dataset.detail);
+        const card = collapse.closest(".item");
+        if (card) setItemOpen(card, false);
+        else closePreviewDock();
+        return;
+      }
+      const item = e.target.closest(".item[data-expand-id]");
+      if (item) {
+        if (e.target.closest(".item__panel") && !e.target.closest("[data-collapse], [data-preview]")) {
+          return;
+        }
+        e.preventDefault();
+        expandItem(item.dataset.expandId);
         return;
       }
       const issue = e.target.closest("[data-issue]");
@@ -738,14 +828,18 @@
         const chev = card.querySelector(".report-card__chev");
         if (chev) chev.textContent = open ? "접기" : "펼치기";
       }
-    });
+    };
+
+    el.heroBand.addEventListener("click", onPreviewClick);
+    el.previewDock.addEventListener("click", onPreviewClick);
+    el.main.addEventListener("click", onPreviewClick);
 
     el.main.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" && e.key !== " ") return;
-      const item = e.target.closest(".item[data-detail]");
-      if (!item) return;
+      const item = e.target.closest(".item[data-expand-id]");
+      if (!item || e.target.closest("a, button")) return;
       e.preventDefault();
-      showDetail(item.dataset.detail);
+      expandItem(item.dataset.expandId);
     });
 
     el.syncBtn.addEventListener("click", () => syncFromDoc({ silent: false }));
@@ -767,6 +861,8 @@
       if (e.key !== "Escape") return;
       openSheet(el.dateSheet, false);
       openSheet(el.detailSheet, false);
+      closePreviewDock();
+      collapseAllItems();
     });
 
     setInterval(() => {

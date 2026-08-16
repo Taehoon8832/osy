@@ -43,15 +43,26 @@
           </div>
         </div>
 
+        <nav class="tabs" role="tablist" aria-label="보기">
+          <button type="button" class="tabs__btn is-on" role="tab" aria-selected="true" data-view="latest">최신</button>
+          <button type="button" class="tabs__btn" role="tab" aria-selected="false" data-view="popular">인기</button>
+          <button type="button" class="tabs__btn" role="tab" aria-selected="false" data-view="report">보고서</button>
+        </nav>
+
         <form class="search" id="searchForm" role="search">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/>
             <path d="M20 20l-3.2-3.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
           </svg>
           <label class="sr-only" for="q">검색</label>
-          <input id="q" name="q" type="search" placeholder="이슈 · 대학 · 태그 · 언론사" autocomplete="off" enterkeyhint="search" />
+          <input id="q" name="q" type="search" placeholder="이슈 · 대학 · 태그" autocomplete="off" enterkeyhint="search" />
           <button type="button" class="search__clear" id="searchClear" hidden aria-label="검색 지우기">×</button>
         </form>
+
+        <div class="top__meta">
+          <span class="period" id="periodLabel">전체 기간</span>
+          <span class="sync-status" id="syncStatus" data-mode="idle"></span>
+        </div>
 
         <div class="top__actions">
           <button type="button" class="icon" id="dateBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="dateSheet" title="기간">
@@ -71,20 +82,6 @@
       </div>
     </header>
 
-    <div class="subbar">
-      <div class="subbar__inner">
-        <nav class="tabs" role="tablist" aria-label="보기">
-          <button type="button" class="tabs__btn is-on" role="tab" aria-selected="true" data-view="latest">최신 이슈</button>
-          <button type="button" class="tabs__btn" role="tab" aria-selected="false" data-view="popular">인기</button>
-          <button type="button" class="tabs__btn" role="tab" aria-selected="false" data-view="report">보고서</button>
-        </nav>
-        <div class="subbar__meta">
-          <span class="period" id="periodLabel">전체 기간</span>
-          <span class="sync-status" id="syncStatus" data-mode="idle"></span>
-        </div>
-      </div>
-    </div>
-
     <div class="layout">
       <aside class="rail rail--left" id="railLeft" aria-label="요약">
         <section class="glass">
@@ -100,6 +97,7 @@
       <div class="center">
         <section class="hero-band" id="heroBand"></section>
         <p class="hint" id="viewHint">날짜순 최신 이슈</p>
+        <div class="preview-dock" id="previewDock" hidden></div>
         <div class="mobile-rails" id="mobileRails" aria-label="빠른 보기"></div>
         <main class="main" id="main" aria-live="polite"></main>
       </div>
