@@ -187,9 +187,29 @@ def parse_doc(raw: str) -> dict:
     }
 
 
+DOC_ID = "1A6jOSX1are2HW9llO255QCuO0s4sV0rLLoW1YIOB6Jc"
+DOC_EXPORT_URL = f"https://docs.google.com/document/d/{DOC_ID}/export?format=txt"
+
+
+def download_doc(url: str = DOC_EXPORT_URL) -> str:
+    import urllib.request
+
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "osy-news-sync/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=120) as res:
+        return res.read().decode("utf-8-sig")
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("input", type=Path, help="Google Doc .txt export path")
+    ap = argparse.ArgumentParser(description="Sync Google Doc → data/news.json")
+    ap.add_argument(
+        "input",
+        nargs="?",
+        type=Path,
+        help="Optional local .txt export. Omit to download from Google Doc.",
+    )
     ap.add_argument(
         "-o",
         "--output",
@@ -197,9 +217,27 @@ def main() -> None:
         default=Path("data/news.json"),
         help="Output JSON path",
     )
+    ap.add_argument(
+        "--url",
+        default=DOC_EXPORT_URL,
+        help="Google Doc export URL",
+    )
     args = ap.parse_args()
-    raw = args.input.read_text(encoding="utf-8-sig")
+    if args.input:
+        raw = args.input.read_text(encoding="utf-8-sig")
+    else:
+        print(f"Downloading {args.url}")
+        raw = download_doc(args.url)
     data = parse_doc(raw)
+    data["meta"]["fingerprint"] = "|".join(
+        [
+            str(data["meta"]["total"]),
+            data["articles"][0]["id"] if data["articles"] else "",
+            data["articles"][0]["title"] if data["articles"] else "",
+            data["articles"][-1]["id"] if data["articles"] else "",
+            str(len(raw)),
+        ]
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"

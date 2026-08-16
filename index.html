@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#03C75A" />
-  <meta name="description" content="2026년 대입 뉴스 — 언론사 대시보드" />
-  <title>2026년 대입 뉴스 · 언론사 대시보드</title>
+  <meta name="theme-color" content="#0f3d2e" />
+  <meta name="description" content="오승열의 대입뉴스 — 최신·인기·보고서" />
+  <title>오승열의 대입뉴스</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preload" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
   <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" /></noscript>
@@ -16,110 +16,83 @@
     <div class="boot__panel">
       <div class="boot__brand">
         <span class="boot__mark" aria-hidden="true"></span>
-        <span class="boot__name">대입뉴스</span>
+        <span class="boot__name">오승열의 대입뉴스</span>
       </div>
-      <p class="boot__msg" id="bootMsg">기사를 불러오는 중…</p>
-      <div class="boot__spinner" aria-hidden="true">
-        <span></span><span></span><span></span>
-      </div>
-      <div class="boot__progress" aria-hidden="true">
-        <div class="boot__bar" id="bootBar"></div>
-      </div>
+      <p class="boot__msg" id="bootMsg">불러오는 중…</p>
+      <div class="boot__spinner" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="boot__progress"><div class="boot__bar" id="bootBar"></div></div>
       <p class="boot__pct" id="bootPct">0%</p>
     </div>
   </div>
 
-  <header class="topbar">
-    <div class="topbar__inner">
-      <a class="brand" href="/" aria-label="대입뉴스 홈">
+  <div class="app" id="app" hidden>
+    <header class="top">
+      <div class="brand">
         <span class="brand__mark" aria-hidden="true"></span>
-        <span class="brand__text">
-          <strong>대입뉴스</strong>
-          <em>PRESS DASH</em>
-        </span>
-      </a>
-
-      <form class="search" id="searchForm" role="search">
-        <label class="sr-only" for="q">기사 검색</label>
-        <input id="q" name="q" type="search" placeholder="제목 · 태그 · 언론사 검색" autocomplete="off" enterkeyhint="search" />
-        <button type="submit" class="search__btn" aria-label="검색">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
-      </form>
-
-      <div class="topbar__actions">
-        <button type="button" class="icon-btn" id="filterToggle" aria-expanded="false" aria-controls="rail">
-          필터
-        </button>
-        <a class="source-link" id="sourceLink" href="#" target="_blank" rel="noopener">원본 Doc</a>
+        <strong>오승열의 대입뉴스</strong>
       </div>
-    </div>
-  </header>
+      <div class="top__actions">
+        <button type="button" class="icon" id="dateBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="dateSheet" title="기간 선택">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="16" rx="3" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button type="button" class="icon" id="syncBtn" title="동기화">
+          <span class="sync-spin" aria-hidden="true"></span>
+          <svg class="sync-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20 12a8 8 0 1 1-2.2-5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M20 4v5h-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </header>
 
-  <div class="kpi" id="kpi" hidden>
-    <div class="kpi__item"><span class="kpi__val" data-k="total">0</span><span class="kpi__lbl">기사</span></div>
-    <div class="kpi__item"><span class="kpi__val" data-k="press">0</span><span class="kpi__lbl">언론사</span></div>
-    <div class="kpi__item"><span class="kpi__val" data-k="weeks">0</span><span class="kpi__lbl">주간</span></div>
-    <div class="kpi__item kpi__item--range"><span class="kpi__val kpi__val--sm" data-k="range">—</span><span class="kpi__lbl">기간</span></div>
+    <nav class="tabs" role="tablist" aria-label="보기">
+      <button type="button" class="tabs__btn is-on" role="tab" aria-selected="true" data-view="latest">최신 이슈</button>
+      <button type="button" class="tabs__btn" role="tab" aria-selected="false" data-view="popular">인기</button>
+      <button type="button" class="tabs__btn" role="tab" aria-selected="false" data-view="report">보고서</button>
+    </nav>
+
+    <p class="period" id="periodLabel">전체 기간</p>
+    <p class="hint" id="viewHint">날짜순 최신 이슈</p>
+    <p class="sync-status" id="syncStatus" data-mode="idle"></p>
+
+    <main class="main" id="main" aria-live="polite"></main>
+
+    <footer class="foot">
+      <a id="sourceLink" href="#" target="_blank" rel="noopener">원본 Google Doc</a>
+    </footer>
   </div>
 
-  <div class="months" id="months" role="tablist" aria-label="월별"></div>
-
-  <main class="shell">
-    <aside class="rail" id="rail" aria-label="필터">
-      <section class="rail__sec">
-        <div class="rail__head">
-          <h2>주간</h2>
-          <button type="button" class="text-btn" data-clear="week">초기화</button>
-        </div>
-        <div class="chip-scroll" id="weekChips"></div>
-      </section>
-      <section class="rail__sec">
-        <div class="rail__head">
-          <h2>언론사</h2>
-          <button type="button" class="text-btn" data-clear="press">초기화</button>
-        </div>
-        <div class="chip-wrap" id="pressChips"></div>
-      </section>
-      <section class="rail__sec">
-        <div class="rail__head">
-          <h2>태그</h2>
-          <button type="button" class="text-btn" data-clear="tag">초기화</button>
-        </div>
-        <div class="chip-wrap" id="tagChips"></div>
-      </section>
-    </aside>
-
-    <section class="feed" aria-label="기사 피드">
-      <div class="feed__toolbar">
-        <p class="feed__count" id="feedCount">0건</p>
-        <div class="seg" role="group" aria-label="보기">
-          <button type="button" class="seg__btn is-on" data-view="list">리스트</button>
-          <button type="button" class="seg__btn" data-view="grid">그리드</button>
-        </div>
-        <select id="sort" class="sort" aria-label="정렬">
-          <option value="newest">최신순</option>
-          <option value="oldest">오래된순</option>
-          <option value="press">언론사순</option>
-        </select>
+  <div class="sheet" id="dateSheet" hidden>
+    <button type="button" class="sheet__dim" id="dateDim" aria-label="닫기"></button>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="dateTitle">
+      <div class="sheet__grab" aria-hidden="true"></div>
+      <div class="sheet__head">
+        <h2 id="dateTitle">기간 선택</h2>
+        <button type="button" class="sheet__close" id="dateClose">닫기</button>
       </div>
+      <div class="sheet__body" id="dateList"></div>
+    </div>
+  </div>
 
-      <article class="hero" id="hero" hidden></article>
-
-      <div class="active-filters" id="activeFilters" hidden></div>
-
-      <div class="list" id="list" data-view="list"></div>
-      <div class="sentinel" id="sentinel" aria-hidden="true"></div>
-      <p class="empty" id="empty" hidden>조건에 맞는 기사가 없습니다.</p>
-    </section>
-  </main>
-
-  <footer class="foot">
-    <p>대입뉴스 오승열 · Google Doc 기반 언론사 대시보드</p>
-  </footer>
+  <div class="sheet" id="detailSheet" hidden>
+    <button type="button" class="sheet__dim" id="detailDim" aria-label="닫기"></button>
+    <div class="sheet__panel sheet__panel--wide" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+      <div class="sheet__grab" aria-hidden="true"></div>
+      <div class="sheet__head">
+        <h2 id="detailTitle">이슈 상세</h2>
+        <button type="button" class="sheet__close" id="detailClose">닫기</button>
+      </div>
+      <div class="sheet__body" id="detailBody"></div>
+    </div>
+  </div>
 
   <button type="button" class="fab" id="toTop" aria-label="맨 위로" hidden>↑</button>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
+  <script src="assets/js/parse-doc.js" defer></script>
   <script src="assets/js/dashboard.js" defer></script>
 </body>
 </html>

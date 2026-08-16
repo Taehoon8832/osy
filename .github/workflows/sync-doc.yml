@@ -1,0 +1,39 @@
+name: Sync Google Doc
+
+on:
+  schedule:
+    # Every 30 minutes — keeps data/news.json backup fresh
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/parse_gdoc.py"
+      - ".github/workflows/sync-doc.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download & parse Google Doc
+        run: python scripts/parse_gdoc.py -o data/news.json
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/news.json
+          if git diff --staged --quiet; then
+            echo "No changes"
+          else
+            git commit -m "chore: sync news from Google Doc"
+            git push
+          fi
