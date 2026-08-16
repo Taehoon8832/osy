@@ -40,6 +40,7 @@
     searchForm: document.getElementById("searchForm"),
     q: document.getElementById("q"),
     searchClear: document.getElementById("searchClear"),
+    docOpen: document.getElementById("docOpen"),
     dateBtn: document.getElementById("dateBtn"),
     dateSheet: document.getElementById("dateSheet"),
     dateList: document.getElementById("dateList"),
@@ -60,7 +61,7 @@
   };
 
   const HINTS = {
-    latest: "카드를 누르면 같은 자리에서 펼쳐 미리보기",
+    latest: "",
     popular: "이슈를 누르면 아래에서 바로 펼쳐 읽기",
     report: "펼친 뒤 미리보기로 같은 페이지에서 이어 읽기",
   };
@@ -414,6 +415,7 @@
     if (state.tagFilter) label += ` · ${state.tagFilter}`;
     el.periodLabel.textContent = label;
     el.viewHint.textContent = HINTS[state.view];
+    el.viewHint.hidden = !HINTS[state.view];
   }
 
   function renderDateList() {
@@ -488,12 +490,22 @@
         <div class="expand__site-bar">
           <strong>원문 미리보기</strong>
           <div class="expand__site-bar-actions">
-            <a class="btn-sm" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer">새 탭</a>
-            <button type="button" class="btn-sm" data-site-close>닫기</button>
+            <a class="site-ico" href="${escapeAttr(a.url)}" target="_blank" rel="noopener noreferrer" title="새 창에서 열기" aria-label="새 창에서 열기">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M14 4h6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M10 14L20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </a>
+            <button type="button" class="site-ico" data-site-close title="미리보기 닫기" aria-label="미리보기 닫기">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
         </div>
         <iframe class="expand__site-frame" title="원문 미리보기" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" data-src="${escapeAttr(a.url)}"></iframe>
-        <p class="expand__site-note">일부 언론사는 보안 정책으로 미리보기가 비어 보일 수 있습니다. 그때는 위의 요약으로 확인하거나 ‘새 탭’을 이용하세요.</p>
+        <p class="expand__site-note">일부 언론사는 보안 정책으로 미리보기가 비어 보일 수 있습니다. 그때는 우측 상단 새 창 아이콘을 이용하세요.</p>
       </div>
     </div>`;
   }
@@ -823,7 +835,10 @@
     state.data = data;
     state.fingerprint = data.meta.fingerprint;
     writeCache(data);
-    if (data.meta.source) el.sourceLink.href = data.meta.source;
+    if (data.meta.source) {
+      if (el.sourceLink) el.sourceLink.href = data.meta.source;
+      if (el.docOpen) el.docOpen.href = data.meta.source;
+    }
     refreshDataViews();
     el.app.hidden = false;
     if (el.topBar) el.topBar.hidden = false;

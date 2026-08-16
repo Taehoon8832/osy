@@ -39,7 +39,6 @@
         <span class="brand__mark" aria-hidden="true"></span>
         <div class="brand__text">
           <strong>오승열의 대입뉴스</strong>
-          <em>ADMISSIONS BRIEF</em>
         </div>
       </div>
 
@@ -57,6 +56,21 @@
         <label class="sr-only" for="q">검색</label>
         <input id="q" name="q" type="search" placeholder="이슈 · 대학 · 태그" autocomplete="off" enterkeyhint="search" />
         <button type="button" class="search__clear" id="searchClear" hidden aria-label="검색 지우기">×</button>
+        <a
+          class="search__doc"
+          id="docOpen"
+          href="https://docs.google.com/document/d/1A6jOSX1are2HW9llO255QCuO0s4sV0rLLoW1YIOB6Jc/edit"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="DOC 원문 보기"
+          aria-label="DOC 원문 보기"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M7 3.5h7.2L19 8.3V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5H7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M14 3.5V8h4.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M9 12.5h6M9 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </a>
       </form>
 
       <div class="top__end">
@@ -98,7 +112,7 @@
 
       <div class="center">
         <section class="hero-band" id="heroBand"></section>
-        <p class="hint" id="viewHint">날짜순 최신 이슈</p>
+        <p class="hint" id="viewHint" hidden></p>
         <div class="preview-dock" id="previewDock" hidden></div>
         <div class="mobile-rails" id="mobileRails" aria-label="빠른 보기"></div>
         <main class="main" id="main" aria-live="polite"></main>
