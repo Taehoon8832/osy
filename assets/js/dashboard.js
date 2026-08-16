@@ -62,8 +62,8 @@
 
   const HINTS = {
     latest: "",
-    popular: "이슈를 누르면 아래에서 바로 펼쳐 읽기",
-    report: "펼친 뒤 미리보기로 같은 페이지에서 이어 읽기",
+    popular: "",
+    report: "",
   };
 
   const setProgress = (n, msg) => {
@@ -546,7 +546,7 @@
       </div>
       <h3 class="item__title">${escapeHtml(a.title)}</h3>
       ${sum ? `<p class="item__sum">${escapeHtml(sum)}</p>` : ""}
-      <p class="item__hint">탭하여 펼쳐 미리보기 →</p>
+      <p class="item__hint">확인하기</p>
       <div class="item__panel" aria-hidden="true">
         <div class="item__panel-inner"></div>
       </div>
@@ -566,7 +566,7 @@
     card.classList.toggle("is-open", open);
     card.setAttribute("aria-expanded", String(open));
     const hint = card.querySelector(".item__hint");
-    if (hint) hint.textContent = open ? "접기 ▲" : "탭하여 펼쳐 미리보기 →";
+    if (hint) hint.textContent = open ? "접기 ▲" : "확인하기";
     const panel = card.querySelector(".item__panel");
     if (panel) panel.setAttribute("aria-hidden", String(!open));
   }
